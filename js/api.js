@@ -1,14 +1,31 @@
 const API = {
-  async searchCity(query) {
-    if (!query.trim()) return [];
-    const url = `${CONFIG.GEOCODING_URL}?name=${encodeURIComponent(query)}&count=5&language=en&format=json`;
-    const res = await fetch(url);
+  async _fetch(url, { timeoutMs = CONFIG.FETCH_TIMEOUT_MS, signal } = {}) {
+    const controller = new AbortController();
+    const onUserAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', onUserAbort, { once: true });
+    }
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onUserAbort);
+    }
+  },
+
+  async searchCity(query, { signal } = {}) {
+    const trimmed = (query || '').trim();
+    if (trimmed.length < CONFIG.SEARCH_MIN_CHARS) return [];
+    const url = `${CONFIG.GEOCODING_URL}?name=${encodeURIComponent(trimmed)}&count=5&language=en&format=json`;
+    const res = await this._fetch(url, { signal });
     if (!res.ok) throw new Error('Geocoding request failed');
     const data = await res.json();
     return data.results || [];
   },
 
-  async getWeather(lat, lon) {
+  async getWeather(lat, lon, { signal } = {}) {
     const params = new URLSearchParams({
       latitude: lat,
       longitude: lon,
@@ -19,8 +36,7 @@ const API = {
       forecast_days: CONFIG.FORECAST_DAYS,
       wind_speed_unit: 'kmh'
     });
-    const url = `${CONFIG.FORECAST_URL}?${params.toString()}`;
-    const res = await fetch(url);
+    const res = await this._fetch(`${CONFIG.FORECAST_URL}?${params}`, { signal });
     if (!res.ok) throw new Error('Weather request failed');
     return await res.json();
   },
@@ -44,8 +60,7 @@ const API = {
     const daily = raw.daily.time.map((date, i) => ({
       date,
       weatherCode: raw.daily.weather_code[i],
-      tempMax: raw.daily.temperature_2m_max[i],
-      tempMin: raw.daily.temperature_2m_min[i]
+      tempMax: raw.daily.temperature_2m_max[i]
     }));
 
     return { current, hourly, daily };

@@ -10,20 +10,33 @@ const Utils = {
   },
 
   formatHour(isoString) {
-    const t = isoString.split('T')[1];
+    const t = (isoString || '').split('T')[1];
     return t ? t.substring(0, 5) : '--:--';
   },
 
-  roundTemp(v) {
-    return Math.round(v);
-  },
-
   getHour(isoString) {
-    const t = isoString.split('T')[1];
+    const t = (isoString || '').split('T')[1];
     return t ? parseInt(t.substring(0, 2), 10) : 0;
   },
 
+  safeRound(v, fallback = '--') {
+    if (v === null || v === undefined || Number.isNaN(v)) return fallback;
+    return Math.round(v);
+  },
+
+  safeFixed(v, decimals = 1, fallback = '--') {
+    if (v === null || v === undefined || Number.isNaN(v)) return fallback;
+    return Number(v).toFixed(decimals);
+  },
+
   cToF(c) { return c * 9 / 5 + 32; },
+  kmhToMph(v) { return v * 0.621371; },
+
+  escapeHTML(str) {
+    return String(str ?? '').replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[m]));
+  },
 
   storageGet(key, fallback = null) {
     try {

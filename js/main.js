@@ -1,174 +1,342 @@
 const state = {
   city: null,
   weather: null,
-  activeDayIndex: 0,
+  currentHourIdx: 0,
   hourStartIndex: 0,
-  selectedHourIdx: 0,
-  units: 'celsius'
+  selectedHourAbsIdx: 0,
+  activeDayIndex: 0,
+  units: 'celsius',
+  loading: false,
+  weatherAbort: null,
+  searchAbort: null,
+  searchToken: 0,
+  weatherToken: 0
 };
 
-async function loadWeather(city) {
-  UI.showLoading();
-  try {
-    const raw = await API.getWeather(city.latitude, city.longitude);
-    const data = API.normalizeWeather(raw);
-
-    state.city = city;
-    state.weather = data;
-
-    Utils.storageSet(CONFIG.STORAGE_KEYS.CITY, city);
-
-    const nowHour = Utils.getHour(data.current.time);
-    state.activeDayIndex = 0;
-    state.hourStartIndex = Math.max(0, nowHour - 1);
-    state.hourStartIndex = Math.min(state.hourStartIndex, 24 - CONFIG.HOURLY_SLOTS);
-    state.selectedHourIdx = Math.min(nowHour - state.hourStartIndex, CONFIG.HOURLY_SLOTS - 1);
-
-    renderAll();
-    UI.hideError();
-  } catch (err) {
-    console.error(err);
-    const cached = Utils.storageGet(CONFIG.STORAGE_KEYS.CACHE);
-    if (cached && cached.city) {
-      state.city = cached.city;
-      state.weather = cached.data;
-      renderAll();
-      UI.showError('Offline — showing cached data');
-    } else {
-      UI.showError('Failed to load weather data');
-    }
-  }
+// ==== Helpers ====
+function findCurrentHourIndex(weather) {
+  const prefix = weather.current.time.substring(0, 13); // "YYYY-MM-DDTHH"
+  const idx = weather.hourly.findIndex(h => h.time.substring(0, 13) === prefix);
+  return idx >= 0 ? idx : 0;
 }
 
-function renderAll() {
-  const { city, weather, activeDayIndex, hourStartIndex, selectedHourIdx, units } = state;
-  UI.renderHeader(city, weather.current.time);
-  UI.renderCurrent(weather.current, units);
-  UI.renderDaily(weather.daily, activeDayIndex, units);
-  UI.renderHourly(weather.hourly, activeDayIndex, hourStartIndex, selectedHourIdx, units);
+function maxHourStart() {
+  return Math.max(0, (state.weather?.hourly.length || 0) - CONFIG.HOURLY_SLOTS);
+}
 
+function defaultHourStartForDay(dayIdx) {
+  if (dayIdx === 0) {
+    return Math.max(0, Math.min(state.currentHourIdx - 1, maxHourStart()));
+  }
+  return Math.min(dayIdx * 24, maxHourStart());
+}
+
+function defaultSelectedForDay(dayIdx) {
+  if (dayIdx === 0) return state.currentHourIdx;
+  return Math.min(dayIdx * 24, (state.weather?.hourly.length || 1) - 1);
+}
+
+function getDisplayData() {
+  const { weather, selectedHourAbsIdx, currentHourIdx } = state;
+  if (!weather) return null;
+  if (selectedHourAbsIdx === currentHourIdx) {
+    return { ...weather.current, isNow: true };
+  }
+  const h = weather.hourly[selectedHourAbsIdx];
+  if (!h) return { ...weather.current, isNow: true };
+  return {
+    temperature: h.temperature,
+    weatherCode: h.weatherCode,
+    isDay: isDayAtTime(h.time),
+    humidity: weather.current.humidity,
+    windSpeed: weather.current.windSpeed,
+    time: h.time,
+    isNow: false
+  };
+}
+
+// ==== Render ====
+function renderAll() {
+  if (!state.city || !state.weather) return;
+  UI.renderHeader(state.city, state.weather.current.time);
+  UI.renderCurrent(getDisplayData(), state.units);
+  UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units);
+  UI.renderHourly(state.weather.hourly, state.hourStartIndex, state.selectedHourAbsIdx, state.units);
+  updateArrowButtons();
+  saveCache();
+}
+
+function renderCurrentOnly() {
+  UI.renderCurrent(getDisplayData(), state.units);
+}
+
+function renderHourlyOnly() {
+  UI.renderHourly(state.weather.hourly, state.hourStartIndex, state.selectedHourAbsIdx, state.units);
+  updateArrowButtons();
+}
+
+function updateArrowButtons() {
+  const prev = document.getElementById('hour-prev');
+  const next = document.getElementById('hour-next');
+  if (prev) prev.disabled = state.hourStartIndex <= 0;
+  if (next) next.disabled = state.hourStartIndex >= maxHourStart();
+}
+
+function saveCache() {
   Utils.storageSet(CONFIG.STORAGE_KEYS.CACHE, {
-    city,
-    data: weather,
+    city: state.city,
+    data: state.weather,
     savedAt: Date.now()
   });
 }
 
-function onDailyClick(e) {
-  const row = e.target.closest('.daily-row');
-  if (!row || !state.weather) return;
+// ==== Loading ====
+async function loadWeather(city) {
+  const token = ++state.weatherToken;
+  state.loading = true;
+  UI.showLoading();
+  UI.hideError();
 
-  state.activeDayIndex = parseInt(row.dataset.index, 10);
+  if (state.weatherAbort) state.weatherAbort.abort();
+  state.weatherAbort = new AbortController();
 
-  if (state.activeDayIndex === 0) {
-    const nowHour = Utils.getHour(state.weather.current.time);
-    state.hourStartIndex = Math.max(0, nowHour - 1);
-    state.hourStartIndex = Math.min(state.hourStartIndex, 24 - CONFIG.HOURLY_SLOTS);
-    state.selectedHourIdx = Math.min(nowHour - state.hourStartIndex, CONFIG.HOURLY_SLOTS - 1);
-  } else {
-    state.hourStartIndex = 0;
-    state.selectedHourIdx = 0;
+  try {
+    const raw = await API.getWeather(city.latitude, city.longitude, { signal: state.weatherAbort.signal });
+    if (token !== state.weatherToken) return;
+
+    const data = API.normalizeWeather(raw);
+    state.city = city;
+    state.weather = data;
+    state.currentHourIdx = findCurrentHourIndex(data);
+    state.activeDayIndex = 0;
+    state.hourStartIndex = defaultHourStartForDay(0);
+    state.selectedHourAbsIdx = state.currentHourIdx;
+
+    Utils.storageSet(CONFIG.STORAGE_KEYS.CITY, city);
+    UI.hideError();
+    renderAll();
+  } catch (err) {
+    if (err.name === 'AbortError' && token !== state.weatherToken) return;
+    if (token !== state.weatherToken) return;
+    console.error('[weather]', err);
+    await tryCacheOrFail(city, err);
+  } finally {
+    if (token === state.weatherToken) state.loading = false;
+  }
+}
+
+async function tryCacheOrFail(city, err) {
+  const cached = Utils.storageGet(CONFIG.STORAGE_KEYS.CACHE);
+  const fresh = cached && (Date.now() - (cached.savedAt || 0) < CONFIG.CACHE_MAX_AGE_MS);
+
+  if (fresh && cached.data && cached.city) {
+    state.city = cached.city;
+    state.weather = cached.data;
+    state.currentHourIdx = findCurrentHourIndex(cached.data);
+    state.activeDayIndex = 0;
+    state.hourStartIndex = defaultHourStartForDay(0);
+    state.selectedHourAbsIdx = state.currentHourIdx;
+    renderAll();
+    const mins = Math.round((Date.now() - cached.savedAt) / 60000);
+    UI.showError(`Offline — showing cached data (${mins} min old)`);
+    return;
   }
 
+  UI.showErrorState();
+  const isOffline = !navigator.onLine;
+  UI.showError(isOffline ? 'You appear to be offline.' : 'Failed to load weather data.');
+  state.city = city;
+}
+
+// ==== Interactions ====
+function onDailyClick(e) {
+  const btn = e.target.closest('.daily-row');
+  if (!btn || !state.weather) return;
+  const idx = parseInt(btn.dataset.index, 10);
+  if (Number.isNaN(idx)) return;
+
+  state.activeDayIndex = idx;
+  state.hourStartIndex = defaultHourStartForDay(idx);
+  state.selectedHourAbsIdx = defaultSelectedForDay(idx);
+
   UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units);
-  UI.renderHourly(state.weather.hourly, state.activeDayIndex, state.hourStartIndex, state.selectedHourIdx, state.units);
+  renderHourlyOnly();
+  renderCurrentOnly();
 }
 
 function onHourClick(e) {
-  const slot = e.target.closest('.hour-slot');
-  if (!slot || !state.weather) return;
-  state.selectedHourIdx = parseInt(slot.dataset.index, 10);
-  UI.renderHourly(state.weather.hourly, state.activeDayIndex, state.hourStartIndex, state.selectedHourIdx, state.units);
+  const btn = e.target.closest('.hour-slot');
+  if (!btn || !state.weather) return;
+  const absIdx = parseInt(btn.dataset.absIdx, 10);
+  if (Number.isNaN(absIdx)) return;
+  state.selectedHourAbsIdx = absIdx;
+  renderHourlyOnly();
+  renderCurrentOnly();
 }
 
 function onHourPrev() {
-  if (state.hourStartIndex <= 0) return;
+  if (!state.weather || state.hourStartIndex <= 0) return;
   state.hourStartIndex--;
-  state.selectedHourIdx = Math.max(0, state.selectedHourIdx - 1);
-  UI.renderHourly(state.weather.hourly, state.activeDayIndex, state.hourStartIndex, state.selectedHourIdx, state.units);
+  renderHourlyOnly();
 }
 
 function onHourNext() {
-  const maxStart = 24 - CONFIG.HOURLY_SLOTS;
-  if (state.hourStartIndex >= maxStart) return;
+  if (!state.weather || state.hourStartIndex >= maxHourStart()) return;
   state.hourStartIndex++;
-  state.selectedHourIdx = Math.min(CONFIG.HOURLY_SLOTS - 1, state.selectedHourIdx + 1);
-  UI.renderHourly(state.weather.hourly, state.activeDayIndex, state.hourStartIndex, state.selectedHourIdx, state.units);
+  renderHourlyOnly();
 }
 
-const doSearch = Utils.debounce(async (query) => {
+function onUnitToggle() {
+  state.units = state.units === 'celsius' ? 'fahrenheit' : 'celsius';
+  Utils.storageSet(CONFIG.STORAGE_KEYS.UNITS, state.units);
+  document.getElementById('unit-toggle').textContent = state.units === 'celsius' ? '°C' : '°F';
+  if (state.weather) {
+    renderCurrentOnly();
+    UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units);
+    renderHourlyOnly();
+  }
+}
+
+// ==== Search ====
+async function doSearch(query) {
   const ul = document.getElementById('search-results');
-  if (!query.trim()) { ul.innerHTML = ''; return; }
+  const trimmed = (query || '').trim();
+
+  if (trimmed.length < CONFIG.SEARCH_MIN_CHARS) {
+    ul.innerHTML = trimmed.length > 0
+      ? `<li class="text-muted text-xs">Type at least ${CONFIG.SEARCH_MIN_CHARS} characters</li>`
+      : '';
+    return;
+  }
+
+  if (state.searchAbort) state.searchAbort.abort();
+  state.searchAbort = new AbortController();
+  const token = ++state.searchToken;
+
+  ul.innerHTML = '<li class="text-muted text-xs">Searching...</li>';
+
   try {
-    const results = await API.searchCity(query);
-    if (results.length === 0) {
+    const results = await API.searchCity(trimmed, { signal: state.searchAbort.signal });
+    if (token !== state.searchToken) return;
+
+    if (!results.length) {
       ul.innerHTML = '<li class="text-muted text-xs">City not found</li>';
       return;
     }
-    ul.innerHTML = results.map((r, i) => `
-      <li data-idx="${i}">
-        <div class="font-medium">${r.name}${r.admin1 ? ', ' + r.admin1 : ''}</div>
-        <div class="text-xs text-muted">${r.country}</div>
-      </li>
-    `).join('');
+
+    ul.innerHTML = results.map((r, i) => {
+      const line1 = [r.name, r.admin1].filter(Boolean).map(Utils.escapeHTML).join(', ');
+      const line2 = Utils.escapeHTML(r.country || '');
+      return `<li data-idx="${i}" role="option">
+        <div class="font-medium">${line1}</div>
+        <div class="text-xs text-muted">${line2}</div>
+      </li>`;
+    }).join('');
+
     ul.querySelectorAll('li[data-idx]').forEach(li => {
       li.addEventListener('click', () => {
         const r = results[parseInt(li.dataset.idx, 10)];
+        if (!r) return;
         const city = {
           name: r.name,
           country: r.country,
           latitude: r.latitude,
-          longitude: r.longitude,
-          timezone: r.timezone
+          longitude: r.longitude
         };
-        document.getElementById('search-panel').classList.add('hidden');
-        document.getElementById('search-input').value = '';
-        document.getElementById('search-results').innerHTML = '';
+        closeSearchPanel();
         loadWeather(city);
       });
     });
   } catch (err) {
-    console.error(err);
+    if (err.name === 'AbortError') return;
+    if (token !== state.searchToken) return;
+    console.error('[search]', err);
     ul.innerHTML = '<li class="text-muted text-xs">Search failed</li>';
-  }
-}, 400);
-
-function onCityButtonClick() {
-  const panel = document.getElementById('search-panel');
-  panel.classList.toggle('hidden');
-  if (!panel.classList.contains('hidden')) {
-    document.getElementById('search-input').focus();
   }
 }
 
+function closeSearchPanel() {
+  const panel = document.getElementById('search-panel');
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+  panel.classList.add('hidden');
+  input.value = '';
+  results.innerHTML = '';
+}
+
+function onCityButtonClick() {
+  const panel = document.getElementById('search-panel');
+  const input = document.getElementById('search-input');
+  const isHidden = panel.classList.toggle('hidden') === false;
+  if (!panel.classList.contains('hidden')) input.focus();
+}
+
+// ==== Init ====
 function init() {
   UI.init();
 
   state.units = Utils.storageGet(CONFIG.STORAGE_KEYS.UNITS, 'celsius');
+  document.getElementById('unit-toggle').textContent = state.units === 'celsius' ? '°C' : '°F';
+
   const lastCity = Utils.storageGet(CONFIG.STORAGE_KEYS.CITY, CONFIG.DEFAULT_CITY);
 
+  // Event listeners
   document.getElementById('city-button').addEventListener('click', onCityButtonClick);
-  document.getElementById('search-input').addEventListener('input', e => doSearch(e.target.value));
+
+  const searchInput = document.getElementById('search-input');
+  searchInput.addEventListener('input', Utils.debounce(e => doSearch(e.target.value), CONFIG.SEARCH_DEBOUNCE_MS));
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#search-results li[data-idx="0"]');
+      if (first) first.click();
+    } else if (e.key === 'Escape') {
+      closeSearchPanel();
+    }
+  });
+
   document.getElementById('daily-list').addEventListener('click', onDailyClick);
   document.getElementById('hourly-items').addEventListener('click', onHourClick);
   document.getElementById('hour-prev').addEventListener('click', onHourPrev);
   document.getElementById('hour-next').addEventListener('click', onHourNext);
+  document.getElementById('unit-toggle').addEventListener('click', onUnitToggle);
   document.getElementById('error-retry').addEventListener('click', () => loadWeather(state.city || lastCity));
+  document.getElementById('error-dismiss').addEventListener('click', UI.hideError.bind(UI));
 
-  document.addEventListener('click', e => {
+  document.addEventListener('click', (e) => {
     const panel = document.getElementById('search-panel');
     const btn = document.getElementById('city-button');
-    if (!panel.contains(e.target) && !btn.contains(e.target)) {
-      panel.classList.add('hidden');
+    if (!panel.classList.contains('hidden') && !panel.contains(e.target) && !btn.contains(e.target)) {
+      closeSearchPanel();
     }
   });
 
-  window.addEventListener('resize', Utils.debounce(() => {
-    if (state.weather) {
-      UI.renderHourly(state.weather.hourly, state.activeDayIndex, state.hourStartIndex, state.selectedHourIdx, state.units);
-    }
-  }, 150));
+  // Re-render hourly on resize (kurva SVG butuh lebar baru)
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(Utils.debounce(() => {
+      if (state.weather) renderHourlyOnly();
+    }, 150)).observe(document.getElementById('hourly-track'));
+  } else {
+    window.addEventListener('resize', Utils.debounce(() => {
+      if (state.weather) renderHourlyOnly();
+    }, 150));
+  }
 
+  // Auto-refresh: 15 menit + saat tab aktif kembali
+  setInterval(() => {
+    if (state.city && !state.loading && document.visibilityState === 'visible') {
+      loadWeather(state.city);
+    }
+  }, CONFIG.AUTO_REFRESH_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !state.city || state.loading) return;
+    const cached = Utils.storageGet(CONFIG.STORAGE_KEYS.CACHE);
+    if (cached && (Date.now() - (cached.savedAt || 0)) > 10 * 60 * 1000) {
+      loadWeather(state.city);
+    }
+  });
+
+  // Load awal
   loadWeather(lastCity);
 }
 

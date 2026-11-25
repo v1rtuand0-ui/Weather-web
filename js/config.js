@@ -6,8 +6,7 @@ const CONFIG = {
     name: 'Jakarta',
     country: 'Indonesia',
     latitude: -6.2088,
-    longitude: 106.8456,
-    timezone: 'Asia/Jakarta'
+    longitude: 106.8456
   },
 
   FORECAST_DAYS: 7,
@@ -16,7 +15,13 @@ const CONFIG = {
 
   CURRENT_FIELDS: ['temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'weather_code', 'is_day'],
   HOURLY_FIELDS: ['temperature_2m', 'weather_code'],
-  DAILY_FIELDS: ['weather_code', 'temperature_2m_max', 'temperature_2m_min'],
+  DAILY_FIELDS: ['weather_code', 'temperature_2m_max'],
+
+  CACHE_MAX_AGE_MS: 30 * 60 * 1000,
+  AUTO_REFRESH_MS: 15 * 60 * 1000,
+  FETCH_TIMEOUT_MS: 10000,
+  SEARCH_DEBOUNCE_MS: 400,
+  SEARCH_MIN_CHARS: 2,
 
   STORAGE_KEYS: {
     CITY: 'weather_app_city',
