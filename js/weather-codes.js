@@ -1,35 +1,34 @@
 const WEATHER_CODES = {
   0:  { label: 'Sunny',            icon: 'clear-day' },
-  1:  { label: 'Partly Cloudy',    icon: 'partly-cloudy' },
+  1:  { label: 'Mostly Clear',     icon: 'partly-cloudy' },
   2:  { label: 'Partly Cloudy',    icon: 'partly-cloudy' },
   3:  { label: 'Cloudy',           icon: 'cloudy' },
   45: { label: 'Foggy',            icon: 'fog' },
   48: { label: 'Foggy',            icon: 'fog' },
-  51: { label: 'Light Rain',       icon: 'drizzle' },
-  53: { label: 'Light Rain',       icon: 'drizzle' },
-  55: { label: 'Light Rain',       icon: 'drizzle' },
-  56: { label: 'Light Rain',       icon: 'drizzle' },
-  57: { label: 'Light Rain',       icon: 'drizzle' },
-  61: { label: 'Rain',             icon: 'rain' },
+  51: { label: 'Light Drizzle',    icon: 'drizzle' },
+  53: { label: 'Drizzle',          icon: 'drizzle' },
+  55: { label: 'Heavy Drizzle',    icon: 'drizzle' },
+  56: { label: 'Freezing Drizzle', icon: 'drizzle' },
+  57: { label: 'Freezing Drizzle', icon: 'drizzle' },
+  61: { label: 'Light Rain',       icon: 'rain' },
   63: { label: 'Rain',             icon: 'rain' },
-  65: { label: 'Rain',             icon: 'rain' },
-  66: { label: 'Rain',             icon: 'rain' },
-  67: { label: 'Rain',             icon: 'rain' },
-  71: { label: 'Snow',             icon: 'snow' },
+  65: { label: 'Heavy Rain',       icon: 'rain' },
+  66: { label: 'Freezing Rain',    icon: 'rain' },
+  67: { label: 'Freezing Rain',    icon: 'rain' },
+  71: { label: 'Light Snow',       icon: 'snow' },
   73: { label: 'Snow',             icon: 'snow' },
-  75: { label: 'Snow',             icon: 'snow' },
-  77: { label: 'Snow',             icon: 'snow' },
-  80: { label: 'Cloudy with Rain', icon: 'rain' },
-  81: { label: 'Cloudy with Rain', icon: 'rain' },
-  82: { label: 'Cloudy with Rain', icon: 'rain' },
-  85: { label: 'Snow',             icon: 'snow' },
-  86: { label: 'Snow',             icon: 'snow' },
+  75: { label: 'Heavy Snow',       icon: 'snow' },
+  77: { label: 'Snow Grains',      icon: 'snow' },
+  80: { label: 'Light Showers',    icon: 'rain' },
+  81: { label: 'Rain Showers',     icon: 'rain' },
+  82: { label: 'Heavy Showers',    icon: 'rain' },
+  85: { label: 'Snow Showers',     icon: 'snow' },
+  86: { label: 'Heavy Snow Showers', icon: 'snow' },
   95: { label: 'Storm with Rain',  icon: 'storm' },
-  96: { label: 'Storm with Rain',  icon: 'storm' },
-  99: { label: 'Storm with Rain',  icon: 'storm' }
+  96: { label: 'Storm with Hail',  icon: 'storm' },
+  99: { label: 'Severe Storm',     icon: 'storm' }
 };
 
-// Kategori warna glow berdasarkan ikon
 const GLOW_CATEGORY = {
   'clear-day': 'day', 'clear-night': 'night',
   'partly-cloudy': 'day', 'partly-cloudy-night': 'night',
@@ -43,17 +42,12 @@ function getWeatherInfo(code, isDay = true) {
     return { label: isDay ? 'Sunny' : 'Clear', icon: isDay ? 'clear-day' : 'clear-night' };
   }
   if ((code === 1 || code === 2) && !isDay) {
-    return { label: 'Partly Cloudy', icon: 'partly-cloudy-night' };
+    return { label: WEATHER_CODES[code].label, icon: 'partly-cloudy-night' };
   }
   return WEATHER_CODES[code] || { label: 'Unknown', icon: 'cloudy' };
 }
 
-function isDayAtTime(isoString) {
-  const hour = parseInt(isoString.substring(11, 13), 10);
-  return hour >= 6 && hour < 18;
-}
-
-// ===== Large icons =====
+// ===== Large icons (SVG) =====
 const ICONS = {
   'clear-day': `<svg viewBox="0 0 100 100" class="w-full h-full">
     <defs><radialGradient id="sunGrad" cx="45%" cy="45%" r="60%">
@@ -159,9 +153,13 @@ const ICONS = {
       <linearGradient id="boltG" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="#FFD370"/><stop offset="100%" stop-color="#F5A524"/>
       </linearGradient>
+      <filter id="boltGlow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="1.5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
     </defs>
     <path d="M30 56 Q18 56 18 46 Q18 36 30 36 Q32 26 45 26 Q56 21 66 28 Q76 26 80 38 Q86 42 86 49 Q86 56 76 56 Z" fill="url(#clst)"/>
-    <path d="M52 56 L40 80 L52 80 L46 96 L66 70 L54 70 L60 56 Z" fill="url(#boltG)" style="filter: drop-shadow(0 0 6px rgba(245,165,36,0.9));"/>
+    <path d="M52 56 L40 80 L52 80 L46 96 L66 70 L54 70 L60 56 Z" fill="url(#boltG)" filter="url(#boltGlow)"/>
   </svg>`,
 
   'snow': `<svg viewBox="0 0 100 100" class="w-full h-full">
@@ -177,7 +175,6 @@ const ICONS = {
   </svg>`
 };
 
-// ===== Small line icons =====
 const SMALL_ICONS = {
   'clear-day': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="w-full h-full"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="5" y1="5" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="19" y2="19"/><line x1="5" y1="19" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="19" y2="5"/></svg>`,
   'clear-night': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-full h-full"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,

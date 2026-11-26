@@ -51,19 +51,33 @@ const API = {
       isDay: raw.current.is_day === 1
     };
 
-    const hourly = raw.hourly.time.map((time, i) => ({
-      time,
-      temperature: raw.hourly.temperature_2m[i],
-      weatherCode: raw.hourly.weather_code[i],
-      humidity: raw.hourly.relative_humidity_2m[i],
-      windSpeed: raw.hourly.wind_speed_10m[i]
-    }));
-
     const daily = raw.daily.time.map((date, i) => ({
       date,
       weatherCode: raw.daily.weather_code[i],
-      tempMax: raw.daily.temperature_2m_max[i]
+      tempMax: raw.daily.temperature_2m_max[i],
+      sunrise: raw.daily.sunrise?.[i] || null,
+      sunset: raw.daily.sunset?.[i] || null
     }));
+
+    const hourly = raw.hourly.time.map((time, i) => {
+      const dateStr = time.slice(0, 10);
+      const day = daily.find(d => d.date === dateStr);
+      let isDay;
+      if (day && day.sunrise && day.sunset) {
+        isDay = time >= day.sunrise && time < day.sunset;
+      } else {
+        const h = parseInt(time.slice(11, 13), 10);
+        isDay = h >= 6 && h < 18;
+      }
+      return {
+        time,
+        temperature: raw.hourly.temperature_2m[i],
+        weatherCode: raw.hourly.weather_code[i],
+        humidity: raw.hourly.relative_humidity_2m[i],
+        windSpeed: raw.hourly.wind_speed_10m[i],
+        isDay
+      };
+    });
 
     return { current, hourly, daily };
   }

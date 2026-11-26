@@ -1,5 +1,4 @@
 const HourlyChart = {
-  // Hanya gambar kurva (dot sekarang ada di HTML slot)
   render(svgEl, slots) {
     if (!svgEl || slots.length < 2) {
       if (svgEl) svgEl.innerHTML = '';
@@ -8,7 +7,7 @@ const HourlyChart = {
 
     const rect = svgEl.getBoundingClientRect();
     const width = rect.width || 600;
-    const height = rect.height || 152;
+    const height = rect.height || 140;
 
     svgEl.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svgEl.setAttribute('preserveAspectRatio', 'none');
@@ -20,8 +19,9 @@ const HourlyChart = {
     const maxT = Math.max(...temps);
     const range = (maxT - minT) || 1;
 
-    const yTop = height * 0.48;
-    const yBottom = height * 0.72;
+    // Tanpa ikon per jam: kurva di area atas, sejajar angka suhu
+    const yTop = height * 0.24;
+    const yBottom = height * 0.46;
     const n = slots.length;
     const stepX = width / n;
 

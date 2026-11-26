@@ -15,7 +15,7 @@ const CONFIG = {
 
   CURRENT_FIELDS: ['temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'weather_code', 'is_day'],
   HOURLY_FIELDS: ['temperature_2m', 'weather_code', 'relative_humidity_2m', 'wind_speed_10m'],
-  DAILY_FIELDS: ['weather_code', 'temperature_2m_max'],
+  DAILY_FIELDS: ['weather_code', 'temperature_2m_max', 'sunrise', 'sunset'],
 
   CACHE_MAX_AGE_MS: 30 * 60 * 1000,
   AUTO_REFRESH_MS: 15 * 60 * 1000,

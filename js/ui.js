@@ -2,9 +2,9 @@ const UI = {
   els: {},
 
   init() {
-    const ids = ['city-name','date-text','temp-value','temp-unit','condition-text','time-label',
+    const ids = ['city-name','city-button','date-text','temp-value','temp-unit','condition-text','time-label',
       'wind-value','wind-unit','humidity-value','weather-icon','weather-glow',
-      'daily-list','hourly-track','hourly-curve','hourly-items',
+      'daily-list','hourly-track','hourly-curve','hourly-items','hour-prev','hour-next',
       'error-toast','error-message','search-panel','search-input','search-results','unit-toggle'];
     ids.forEach(id => {
       this.els[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
@@ -28,7 +28,6 @@ const UI = {
     const info = getWeatherInfo(display.weatherCode, display.isDay);
     this.els.conditionText.textContent = info.label;
 
-    // Wind (dari jam yang dipilih kalau bukan "now")
     let wind = display.windSpeed;
     if (typeof wind === 'number' && units === 'fahrenheit') wind = Utils.kmhToMph(wind);
     this.els.windValue.textContent = Utils.safeFixed(wind, 1);
@@ -36,16 +35,14 @@ const UI = {
 
     this.els.humidityValue.textContent = Utils.safeRound(display.humidity);
 
-    // Icon + glow
     this.els.weatherIcon.innerHTML = ICONS[info.icon] || ICONS.cloudy;
     const glowCat = GLOW_CATEGORY[info.icon] || 'day';
     this.els.weatherGlow.className = `absolute inset-0 glow-bg glow-${glowCat} rounded-full`;
 
-    // Time label (forecast vs now)
     if (display.isNow) {
       this.els.timeLabel.textContent = '';
     } else {
-      this.els.timeLabel.textContent = `${Utils.formatHour(display.time)} forecast`;
+      this.els.timeLabel.textContent = Utils.formatSlotLabel(display.time, display.nowTime);
     }
   },
 
@@ -57,7 +54,6 @@ const UI = {
       let temp = d.tempMax;
       if (typeof temp === 'number' && units === 'fahrenheit') temp = Utils.cToF(temp);
 
-      // Baris "Today" pakai kondisi sekarang biar konsisten dengan tampilan utama
       let code = d.weatherCode;
       let isDay = true;
       let dayLabel = Utils.formatDayName(d.date);
@@ -97,7 +93,8 @@ const UI = {
     slots.forEach(({ data: h, absIdx }) => {
       let temp = h.temperature;
       if (typeof temp === 'number' && units === 'fahrenheit') temp = Utils.cToF(temp);
-      const info = getWeatherInfo(h.weatherCode, isDayAtTime(h.time));
+      const isDay = typeof h.isDay === 'boolean' ? h.isDay : (Utils.getHour(h.time) >= 6 && Utils.getHour(h.time) < 18);
+      const info = getWeatherInfo(h.weatherCode, isDay);
       const isSelected = absIdx === selectedHourAbsIdx;
 
       const btn = document.createElement('button');
@@ -107,7 +104,6 @@ const UI = {
       btn.setAttribute('aria-label', `${Utils.formatHour(h.time)}, ${info.label}, ${Utils.safeRound(temp)} degrees${isSelected ? ', selected' : ''}`);
       btn.innerHTML = `
         <div class="hour-dot"></div>
-        <div class="hour-icon">${SMALL_ICONS[info.icon] || SMALL_ICONS.cloudy}</div>
         <div class="hour-temp">${Utils.safeRound(temp)}°</div>
         <div class="hour-spacer"></div>
         <div class="hour-label">${Utils.formatHour(h.time)}</div>
@@ -157,7 +153,14 @@ const UI = {
     this.els.windValue.textContent = '--';
     this.els.humidityValue.textContent = '--';
     this.els.weatherIcon.innerHTML = '';
-    this.els.dailyList.innerHTML = '';
+
+    this.els.dailyList.innerHTML = `
+      <div class="flex flex-col items-center justify-center gap-3 py-6 px-2">
+        <p class="text-sm text-muted text-center">Failed to load weather</p>
+        <button type="button" data-action="retry" class="retry-inline">Retry</button>
+      </div>
+    `;
+
     this.els.hourlyItems.innerHTML = '';
     this.els.hourlyCurve.innerHTML = '';
   },

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0B0B0C">
   <title>Weather App</title>
   <meta name="description" content="Minimalist dark weather app — real-time conditions, 7-day forecast, and hourly timeline powered by Open-Meteo.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='22' fill='%23F5A524'/%3E%3C/svg%3E">
@@ -31,12 +32,12 @@
 <body class="font-sans text-white">
   <div class="app-shell max-w-7xl mx-auto px-6 md:px-10 py-6 lg:py-4 flex flex-col">
 
-    <!-- Header: 3-col grid, kota+tanggal di tengah, tombol °C di kanan -->
     <header class="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
       <div></div>
 
       <div class="relative flex items-center justify-center gap-3 flex-wrap">
-        <button id="city-button" aria-label="Change city" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+        <button id="city-button" aria-label="Change city" aria-expanded="false" aria-controls="search-panel"
+          class="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
             <circle cx="12" cy="10" r="3"/>
@@ -50,8 +51,9 @@
 
         <div id="search-panel" class="hidden absolute top-full mt-3 left-1/2 -translate-x-1/2 z-20 w-80 max-w-[calc(100vw-2rem)] bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl p-3 shadow-2xl">
           <input id="search-input" type="text" placeholder="Search city..." autocomplete="off"
+            role="combobox" aria-controls="search-results" aria-autocomplete="list" aria-expanded="false"
             class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm placeholder-muted focus:outline-none focus:border-accent/50 transition">
-          <ul id="search-results" class="mt-2 space-y-1 max-h-64 overflow-y-auto"></ul>
+          <ul id="search-results" role="listbox" aria-label="City search results" class="mt-2 space-y-1 max-h-64 overflow-y-auto"></ul>
         </div>
       </div>
 
@@ -61,10 +63,8 @@
       </div>
     </header>
 
-    <!-- Main: mengisi sisa tinggi, kolom sejajar di tengah (desktop) -->
     <main class="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 lg:gap-10 items-start lg:items-center py-4 lg:py-2">
 
-      <!-- Left -->
       <section class="order-1">
         <div class="flex items-start">
           <span id="temp-value" class="text-8xl lg:text-[clamp(4rem,14vh,8.5rem)] font-extralight leading-none">--</span>
@@ -99,7 +99,6 @@
         </div>
       </section>
 
-      <!-- Center -->
       <section class="order-2 flex justify-center">
         <div class="relative w-56 h-56 md:w-64 md:h-64 lg:w-[clamp(10rem,28vh,17rem)] lg:h-[clamp(10rem,28vh,17rem)] flex items-center justify-center">
           <div id="weather-glow" class="absolute inset-0 glow-bg glow-day rounded-full"></div>
@@ -107,13 +106,11 @@
         </div>
       </section>
 
-      <!-- Right -->
       <section class="order-3 lg:justify-self-end w-full lg:w-auto">
-        <div id="daily-list" class="daily-card rounded-3xl p-3 md:p-4 w-full lg:w-80"></div>
+        <div id="daily-list" class="daily-card rounded-3xl p-3 md:p-4 w-full lg:w-72 xl:w-80"></div>
       </section>
     </main>
 
-    <!-- Hourly -->
     <section class="shrink-0 mt-4 lg:mt-2">
       <div class="flex items-stretch gap-3">
         <div class="flex-1 overflow-x-auto no-scrollbar">
@@ -135,7 +132,6 @@
       </div>
     </section>
 
-    <!-- Footer -->
     <footer class="shrink-0 mt-4 lg:mt-3 text-center text-[11px] text-muted">
       Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Open-Meteo.com</a>
     </footer>

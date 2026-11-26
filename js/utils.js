@@ -5,13 +5,24 @@ const Utils = {
   },
 
   formatDayName(dateStr) {
-    const d = new Date(dateStr + 'T00:00:00');
+    const d = new Date(dateStr + 'T12:00:00');
     return d.toLocaleDateString('en-US', { weekday: 'long' });
   },
 
   formatHour(isoString) {
     const t = (isoString || '').split('T')[1];
     return t ? t.substring(0, 5) : '--:--';
+  },
+
+  formatSlotLabel(time, nowTime) {
+    const slotDate = (time || '').slice(0, 10);
+    const todayDate = (nowTime || '').slice(0, 10);
+    const hhmm = this.formatHour(time);
+    if (!slotDate) return hhmm;
+    if (slotDate === todayDate) return `Today ${hhmm}`;
+    const d = new Date(slotDate + 'T12:00:00');
+    if (Number.isNaN(d.getTime())) return hhmm;
+    return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${hhmm}`;
   },
 
   getHour(isoString) {

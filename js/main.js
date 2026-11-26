@@ -25,30 +25,32 @@ function maxHourStart() {
 
 function defaultHourStartForDay(dayIdx) {
   if (dayIdx === 0) return Math.max(0, Math.min(state.currentHourIdx - 1, maxHourStart()));
-  return Math.min(dayIdx * 24, maxHourStart());
+  return Math.min(dayIdx * 24 + 8, maxHourStart());
 }
 
 function defaultSelectedForDay(dayIdx) {
   if (dayIdx === 0) return state.currentHourIdx;
-  return Math.min(dayIdx * 24, (state.weather?.hourly.length || 1) - 1);
+  return Math.min(dayIdx * 24 + 12, (state.weather?.hourly.length || 1) - 1);
 }
 
 function getDisplayData() {
   const { weather, selectedHourAbsIdx, currentHourIdx } = state;
   if (!weather) return null;
+  const nowTime = weather.current.time;
   if (selectedHourAbsIdx === currentHourIdx) {
-    return { ...weather.current, isNow: true };
+    return { ...weather.current, isNow: true, nowTime };
   }
   const h = weather.hourly[selectedHourAbsIdx];
-  if (!h) return { ...weather.current, isNow: true };
+  if (!h) return { ...weather.current, isNow: true, nowTime };
   return {
     temperature: h.temperature,
     weatherCode: h.weatherCode,
-    isDay: isDayAtTime(h.time),
+    isDay: typeof h.isDay === 'boolean' ? h.isDay : true,
     humidity: h.humidity,
     windSpeed: h.windSpeed,
     time: h.time,
-    isNow: false
+    isNow: false,
+    nowTime
   };
 }
 
@@ -59,7 +61,6 @@ function renderAll() {
   UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units, state.weather.current);
   UI.renderHourly(state.weather.hourly, state.hourStartIndex, state.selectedHourAbsIdx, state.units);
   updateArrowButtons();
-  saveCache();
 }
 
 function renderCurrentOnly() {
@@ -67,19 +68,35 @@ function renderCurrentOnly() {
 }
 
 function renderDailyOnly() {
+  if (!state.weather) return;
   UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units, state.weather.current);
 }
 
 function renderHourlyOnly() {
+  if (!state.weather) return;
   UI.renderHourly(state.weather.hourly, state.hourStartIndex, state.selectedHourAbsIdx, state.units);
   updateArrowButtons();
 }
 
 function updateArrowButtons() {
-  const prev = document.getElementById('hour-prev');
-  const next = document.getElementById('hour-next');
-  if (prev) prev.disabled = state.hourStartIndex <= 0;
-  if (next) next.disabled = state.hourStartIndex >= maxHourStart();
+  UI.els.hourPrev.disabled = state.hourStartIndex <= 0;
+  UI.els.hourNext.disabled = state.hourStartIndex >= maxHourStart();
+}
+
+function syncActiveDayFromWindow() {
+  if (!state.weather) return;
+  const visibleStart = state.hourStartIndex;
+  const visibleEnd = visibleStart + CONFIG.HOURLY_SLOTS - 1;
+  const sel = state.selectedHourAbsIdx;
+  const refIdx = (sel >= visibleStart && sel <= visibleEnd) ? sel : visibleStart;
+  const refHour = state.weather.hourly[refIdx];
+  if (!refHour) return;
+  const dateStr = refHour.time.slice(0, 10);
+  const dayIdx = state.weather.daily.findIndex(d => d.date === dateStr);
+  if (dayIdx >= 0 && dayIdx !== state.activeDayIndex) {
+    state.activeDayIndex = dayIdx;
+    renderDailyOnly();
+  }
 }
 
 function saveCache() {
@@ -90,11 +107,19 @@ function saveCache() {
   });
 }
 
-async function loadWeather(city) {
+async function loadWeather(city, { silent = false } = {}) {
   const token = ++state.weatherToken;
   state.loading = true;
-  UI.showLoading();
-  UI.hideError();
+
+  const wasOnNow = silent && state.weather && state.selectedHourAbsIdx === state.currentHourIdx;
+  const prevSelected = state.selectedHourAbsIdx;
+  const prevHourStart = state.hourStartIndex;
+  const prevDay = state.activeDayIndex;
+
+  if (!silent) {
+    UI.showLoading();
+    UI.hideError();
+  }
 
   if (state.weatherAbort) state.weatherAbort.abort();
   state.weatherAbort = new AbortController();
@@ -107,18 +132,35 @@ async function loadWeather(city) {
     state.city = city;
     state.weather = data;
     state.currentHourIdx = findCurrentHourIndex(data);
-    state.activeDayIndex = 0;
-    state.hourStartIndex = defaultHourStartForDay(0);
-    state.selectedHourAbsIdx = state.currentHourIdx;
+
+    if (silent) {
+      state.activeDayIndex = Math.min(prevDay, data.daily.length - 1);
+      if (wasOnNow) {
+        state.selectedHourAbsIdx = state.currentHourIdx;
+        state.hourStartIndex = Math.max(0, Math.min(state.currentHourIdx - 1, maxHourStart()));
+      } else {
+        state.selectedHourAbsIdx = Math.min(prevSelected, data.hourly.length - 1);
+        state.hourStartIndex = Math.max(0, Math.min(prevHourStart, maxHourStart()));
+      }
+    } else {
+      state.activeDayIndex = 0;
+      state.selectedHourAbsIdx = state.currentHourIdx;
+      state.hourStartIndex = defaultHourStartForDay(0);
+    }
 
     Utils.storageSet(CONFIG.STORAGE_KEYS.CITY, city);
+    saveCache();
     UI.hideError();
     renderAll();
   } catch (err) {
-    if (err.name === 'AbortError' && token !== state.weatherToken) return;
     if (token !== state.weatherToken) return;
+    if (err.name === 'AbortError') return;
     console.error('[weather]', err);
-    await tryCacheOrFail(city, err);
+    if (silent) {
+      UI.showError('Refresh failed. Showing previous data.');
+    } else {
+      await tryCacheOrFail(city, err);
+    }
   } finally {
     if (token === state.weatherToken) state.loading = false;
   }
@@ -127,8 +169,11 @@ async function loadWeather(city) {
 async function tryCacheOrFail(city, err) {
   const cached = Utils.storageGet(CONFIG.STORAGE_KEYS.CACHE);
   const fresh = cached && (Date.now() - (cached.savedAt || 0) < CONFIG.CACHE_MAX_AGE_MS);
+  const sameCity = fresh && cached.city &&
+    Math.round((cached.city.latitude || 0) * 100) === Math.round((city.latitude || 0) * 100) &&
+    Math.round((cached.city.longitude || 0) * 100) === Math.round((city.longitude || 0) * 100);
 
-  if (fresh && cached.data && cached.city) {
+  if (sameCity && cached.data) {
     state.city = cached.city;
     state.weather = cached.data;
     state.currentHourIdx = findCurrentHourIndex(cached.data);
@@ -141,13 +186,17 @@ async function tryCacheOrFail(city, err) {
     return;
   }
 
+  state.city = city;
   UI.showErrorState();
   const isOffline = !navigator.onLine;
   UI.showError(isOffline ? 'You appear to be offline.' : 'Failed to load weather data.');
-  state.city = city;
 }
 
 function onDailyClick(e) {
+  if (e.target.closest('[data-action="retry"]')) {
+    loadWeather(state.city || Utils.storageGet(CONFIG.STORAGE_KEYS.CITY, CONFIG.DEFAULT_CITY));
+    return;
+  }
   const btn = e.target.closest('.daily-row');
   if (!btn || !state.weather) return;
   const idx = parseInt(btn.dataset.index, 10);
@@ -168,6 +217,7 @@ function onHourClick(e) {
   const absIdx = parseInt(btn.dataset.absIdx, 10);
   if (Number.isNaN(absIdx)) return;
   state.selectedHourAbsIdx = absIdx;
+  syncActiveDayFromWindow();
   renderHourlyOnly();
   renderCurrentOnly();
 }
@@ -175,19 +225,21 @@ function onHourClick(e) {
 function onHourPrev() {
   if (!state.weather || state.hourStartIndex <= 0) return;
   state.hourStartIndex--;
+  syncActiveDayFromWindow();
   renderHourlyOnly();
 }
 
 function onHourNext() {
   if (!state.weather || state.hourStartIndex >= maxHourStart()) return;
   state.hourStartIndex++;
+  syncActiveDayFromWindow();
   renderHourlyOnly();
 }
 
 function onUnitToggle() {
   state.units = state.units === 'celsius' ? 'fahrenheit' : 'celsius';
   Utils.storageSet(CONFIG.STORAGE_KEYS.UNITS, state.units);
-  document.getElementById('unit-toggle').textContent = state.units === 'celsius' ? '°C' : '°F';
+  UI.els.unitToggle.textContent = state.units === 'celsius' ? '°C' : '°F';
   if (state.weather) {
     renderCurrentOnly();
     renderDailyOnly();
@@ -195,11 +247,13 @@ function onUnitToggle() {
   }
 }
 
-async function doSearch(query) {
-  const ul = document.getElementById('search-results');
+async function doSearch(query, { force = false } = {}) {
+  const ul = UI.els.searchResults;
   const trimmed = (query || '').trim();
 
   if (trimmed.length < CONFIG.SEARCH_MIN_CHARS) {
+    if (state.searchAbort) state.searchAbort.abort();
+    state.searchToken++;
     ul.innerHTML = trimmed.length > 0
       ? `<li class="text-muted text-xs">Type at least ${CONFIG.SEARCH_MIN_CHARS} characters</li>`
       : '';
@@ -214,17 +268,17 @@ async function doSearch(query) {
 
   try {
     const results = await API.searchCity(trimmed, { signal: state.searchAbort.signal });
-    if (token !== state.searchToken) return;
+    if (token !== state.searchToken) return [];
 
     if (!results.length) {
       ul.innerHTML = '<li class="text-muted text-xs">City not found</li>';
-      return;
+      return [];
     }
 
     ul.innerHTML = results.map((r, i) => {
       const line1 = [r.name, r.admin1].filter(Boolean).map(Utils.escapeHTML).join(', ');
       const line2 = Utils.escapeHTML(r.country || '');
-      return `<li data-idx="${i}" role="option">
+      return `<li id="search-opt-${i}" data-idx="${i}" role="option" aria-selected="false">
         <div class="font-medium">${line1}</div>
         <div class="text-xs text-muted">${line2}</div>
       </li>`;
@@ -244,62 +298,96 @@ async function doSearch(query) {
         loadWeather(city);
       });
     });
+
+    return results;
   } catch (err) {
-    if (err.name === 'AbortError') return;
-    if (token !== state.searchToken) return;
+    if (err.name === 'AbortError') return [];
+    if (token !== state.searchToken) return [];
     console.error('[search]', err);
     ul.innerHTML = '<li class="text-muted text-xs">Search failed</li>';
+    return [];
   }
 }
 
+function moveSearchSelection(dir) {
+  const ul = UI.els.searchResults;
+  const items = ul.querySelectorAll('li[data-idx]');
+  if (!items.length) return;
+  let current = -1;
+  items.forEach((li, i) => { if (li.getAttribute('aria-selected') === 'true') current = i; });
+  let next = current + dir;
+  if (next < 0) next = items.length - 1;
+  if (next >= items.length) next = 0;
+  items.forEach((li, i) => li.setAttribute('aria-selected', i === next ? 'true' : 'false'));
+  UI.els.searchInput.setAttribute('aria-activedescendant', items[next].id);
+}
+
 function closeSearchPanel() {
-  const panel = document.getElementById('search-panel');
-  const input = document.getElementById('search-input');
-  const results = document.getElementById('search-results');
-  panel.classList.add('hidden');
-  input.value = '';
-  results.innerHTML = '';
+  UI.els.searchPanel.classList.add('hidden');
+  UI.els.cityButton.setAttribute('aria-expanded', 'false');
+  UI.els.searchInput.setAttribute('aria-expanded', 'false');
+  UI.els.searchInput.value = '';
+  UI.els.searchResults.innerHTML = '';
+  UI.els.searchInput.removeAttribute('aria-activedescendant');
 }
 
 function onCityButtonClick() {
-  const panel = document.getElementById('search-panel');
-  const input = document.getElementById('search-input');
+  const panel = UI.els.searchPanel;
   panel.classList.toggle('hidden');
-  if (!panel.classList.contains('hidden')) input.focus();
+  const isOpen = !panel.classList.contains('hidden');
+  UI.els.cityButton.setAttribute('aria-expanded', String(isOpen));
+  UI.els.searchInput.setAttribute('aria-expanded', String(isOpen));
+  if (isOpen) UI.els.searchInput.focus();
 }
 
 function init() {
   UI.init();
 
   state.units = Utils.storageGet(CONFIG.STORAGE_KEYS.UNITS, 'celsius');
-  document.getElementById('unit-toggle').textContent = state.units === 'celsius' ? '°C' : '°F';
+  UI.els.unitToggle.textContent = state.units === 'celsius' ? '°C' : '°F';
 
   const lastCity = Utils.storageGet(CONFIG.STORAGE_KEYS.CITY, CONFIG.DEFAULT_CITY);
 
-  document.getElementById('city-button').addEventListener('click', onCityButtonClick);
+  UI.els.cityButton.addEventListener('click', onCityButtonClick);
 
-  const searchInput = document.getElementById('search-input');
+  const searchInput = UI.els.searchInput;
   searchInput.addEventListener('input', Utils.debounce(e => doSearch(e.target.value), CONFIG.SEARCH_DEBOUNCE_MS));
-  searchInput.addEventListener('keydown', (e) => {
+  searchInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') {
-      const first = document.querySelector('#search-results li[data-idx="0"]');
-      if (first) first.click();
+      const first = UI.els.searchResults.querySelector('li[data-idx="0"]');
+      if (first) {
+        first.click();
+      } else if (searchInput.value.trim().length >= CONFIG.SEARCH_MIN_CHARS) {
+        await doSearch(searchInput.value, { force: true });
+        const f = UI.els.searchResults.querySelector('li[data-idx="0"]');
+        if (f) f.click();
+      }
     } else if (e.key === 'Escape') {
       closeSearchPanel();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveSearchSelection(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveSearchSelection(-1);
     }
   });
 
-  document.getElementById('daily-list').addEventListener('click', onDailyClick);
-  document.getElementById('hourly-items').addEventListener('click', onHourClick);
-  document.getElementById('hour-prev').addEventListener('click', onHourPrev);
-  document.getElementById('hour-next').addEventListener('click', onHourNext);
-  document.getElementById('unit-toggle').addEventListener('click', onUnitToggle);
+  UI.els.dailyList.addEventListener('click', onDailyClick);
+  UI.els.hourlyItems.addEventListener('click', onHourClick);
+  UI.els.hourPrev.addEventListener('click', onHourPrev);
+  UI.els.hourNext.addEventListener('click', onHourNext);
+  UI.els.unitToggle.addEventListener('click', onUnitToggle);
   document.getElementById('error-retry').addEventListener('click', () => loadWeather(state.city || lastCity));
   document.getElementById('error-dismiss').addEventListener('click', UI.hideError.bind(UI));
 
   document.addEventListener('click', (e) => {
-    const panel = document.getElementById('search-panel');
-    const btn = document.getElementById('city-button');
+    if (e.target.closest('[data-action="retry"]')) {
+      loadWeather(state.city || Utils.storageGet(CONFIG.STORAGE_KEYS.CITY, CONFIG.DEFAULT_CITY));
+      return;
+    }
+    const panel = UI.els.searchPanel;
+    const btn = UI.els.cityButton;
     if (!panel.classList.contains('hidden') && !panel.contains(e.target) && !btn.contains(e.target)) {
       closeSearchPanel();
     }
@@ -308,16 +396,17 @@ function init() {
   if ('ResizeObserver' in window) {
     new ResizeObserver(Utils.debounce(() => {
       if (state.weather) renderHourlyOnly();
-    }, 150)).observe(document.getElementById('hourly-track'));
+    }, 150)).observe(UI.els.hourlyTrack);
   } else {
     window.addEventListener('resize', Utils.debounce(() => {
       if (state.weather) renderHourlyOnly();
     }, 150));
   }
 
+  // Auto-refresh (silent) 15 menit + saat tab aktif kembali
   setInterval(() => {
     if (state.city && !state.loading && document.visibilityState === 'visible') {
-      loadWeather(state.city);
+      loadWeather(state.city, { silent: true });
     }
   }, CONFIG.AUTO_REFRESH_MS);
 
@@ -325,7 +414,7 @@ function init() {
     if (document.visibilityState !== 'visible' || !state.city || state.loading) return;
     const cached = Utils.storageGet(CONFIG.STORAGE_KEYS.CACHE);
     if (cached && (Date.now() - (cached.savedAt || 0)) > 10 * 60 * 1000) {
-      loadWeather(state.city);
+      loadWeather(state.city, { silent: true });
     }
   });
 
