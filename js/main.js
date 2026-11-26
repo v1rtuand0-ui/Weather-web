@@ -13,9 +13,8 @@ const state = {
   weatherToken: 0
 };
 
-// ==== Helpers ====
 function findCurrentHourIndex(weather) {
-  const prefix = weather.current.time.substring(0, 13); // "YYYY-MM-DDTHH"
+  const prefix = weather.current.time.substring(0, 13);
   const idx = weather.hourly.findIndex(h => h.time.substring(0, 13) === prefix);
   return idx >= 0 ? idx : 0;
 }
@@ -25,9 +24,7 @@ function maxHourStart() {
 }
 
 function defaultHourStartForDay(dayIdx) {
-  if (dayIdx === 0) {
-    return Math.max(0, Math.min(state.currentHourIdx - 1, maxHourStart()));
-  }
+  if (dayIdx === 0) return Math.max(0, Math.min(state.currentHourIdx - 1, maxHourStart()));
   return Math.min(dayIdx * 24, maxHourStart());
 }
 
@@ -48,19 +45,18 @@ function getDisplayData() {
     temperature: h.temperature,
     weatherCode: h.weatherCode,
     isDay: isDayAtTime(h.time),
-    humidity: weather.current.humidity,
-    windSpeed: weather.current.windSpeed,
+    humidity: h.humidity,
+    windSpeed: h.windSpeed,
     time: h.time,
     isNow: false
   };
 }
 
-// ==== Render ====
 function renderAll() {
   if (!state.city || !state.weather) return;
   UI.renderHeader(state.city, state.weather.current.time);
   UI.renderCurrent(getDisplayData(), state.units);
-  UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units);
+  UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units, state.weather.current);
   UI.renderHourly(state.weather.hourly, state.hourStartIndex, state.selectedHourAbsIdx, state.units);
   updateArrowButtons();
   saveCache();
@@ -68,6 +64,10 @@ function renderAll() {
 
 function renderCurrentOnly() {
   UI.renderCurrent(getDisplayData(), state.units);
+}
+
+function renderDailyOnly() {
+  UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units, state.weather.current);
 }
 
 function renderHourlyOnly() {
@@ -90,7 +90,6 @@ function saveCache() {
   });
 }
 
-// ==== Loading ====
 async function loadWeather(city) {
   const token = ++state.weatherToken;
   state.loading = true;
@@ -148,7 +147,6 @@ async function tryCacheOrFail(city, err) {
   state.city = city;
 }
 
-// ==== Interactions ====
 function onDailyClick(e) {
   const btn = e.target.closest('.daily-row');
   if (!btn || !state.weather) return;
@@ -159,7 +157,7 @@ function onDailyClick(e) {
   state.hourStartIndex = defaultHourStartForDay(idx);
   state.selectedHourAbsIdx = defaultSelectedForDay(idx);
 
-  UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units);
+  renderDailyOnly();
   renderHourlyOnly();
   renderCurrentOnly();
 }
@@ -192,12 +190,11 @@ function onUnitToggle() {
   document.getElementById('unit-toggle').textContent = state.units === 'celsius' ? '°C' : '°F';
   if (state.weather) {
     renderCurrentOnly();
-    UI.renderDaily(state.weather.daily, state.activeDayIndex, state.units);
+    renderDailyOnly();
     renderHourlyOnly();
   }
 }
 
-// ==== Search ====
 async function doSearch(query) {
   const ul = document.getElementById('search-results');
   const trimmed = (query || '').trim();
@@ -267,11 +264,10 @@ function closeSearchPanel() {
 function onCityButtonClick() {
   const panel = document.getElementById('search-panel');
   const input = document.getElementById('search-input');
-  const isHidden = panel.classList.toggle('hidden') === false;
+  panel.classList.toggle('hidden');
   if (!panel.classList.contains('hidden')) input.focus();
 }
 
-// ==== Init ====
 function init() {
   UI.init();
 
@@ -280,7 +276,6 @@ function init() {
 
   const lastCity = Utils.storageGet(CONFIG.STORAGE_KEYS.CITY, CONFIG.DEFAULT_CITY);
 
-  // Event listeners
   document.getElementById('city-button').addEventListener('click', onCityButtonClick);
 
   const searchInput = document.getElementById('search-input');
@@ -310,7 +305,6 @@ function init() {
     }
   });
 
-  // Re-render hourly on resize (kurva SVG butuh lebar baru)
   if ('ResizeObserver' in window) {
     new ResizeObserver(Utils.debounce(() => {
       if (state.weather) renderHourlyOnly();
@@ -321,7 +315,6 @@ function init() {
     }, 150));
   }
 
-  // Auto-refresh: 15 menit + saat tab aktif kembali
   setInterval(() => {
     if (state.city && !state.loading && document.visibilityState === 'visible') {
       loadWeather(state.city);
@@ -336,7 +329,6 @@ function init() {
     }
   });
 
-  // Load awal
   loadWeather(lastCity);
 }
 

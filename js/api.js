@@ -54,7 +54,9 @@ const API = {
     const hourly = raw.hourly.time.map((time, i) => ({
       time,
       temperature: raw.hourly.temperature_2m[i],
-      weatherCode: raw.hourly.weather_code[i]
+      weatherCode: raw.hourly.weather_code[i],
+      humidity: raw.hourly.relative_humidity_2m[i],
+      windSpeed: raw.hourly.wind_speed_10m[i]
     }));
 
     const daily = raw.daily.time.map((date, i) => ({

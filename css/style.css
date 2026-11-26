@@ -1,6 +1,11 @@
+html { min-height: 100%; }
 body {
   background: radial-gradient(ellipse at center 30%, #1A1A1C 0%, #0B0B0C 70%);
-  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-shell {
+  min-height: 100dvh;
 }
 
 /* Glow per kondisi */
@@ -19,12 +24,13 @@ body {
   -webkit-backdrop-filter: blur(12px);
 }
 
+/* Compact daily rows */
 .daily-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.2s;
   position: relative;
@@ -46,8 +52,11 @@ body {
   border-radius: 2px;
 }
 
-/* Hourly */
-#hourly-track { position: relative; height: 152px; }
+/* Hourly track — scale ke tinggi viewport di desktop */
+#hourly-track { position: relative; height: 140px; }
+@media (min-width: 1024px) {
+  #hourly-track { height: clamp(96px, 16vh, 136px); }
+}
 #hourly-items { position: relative; z-index: 1; height: 100%; display: flex; }
 
 .hour-slot {
@@ -55,7 +64,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 0 8px;
+  padding: 6px 0 4px;
   height: 100%;
   cursor: pointer;
   flex: 1;
@@ -71,7 +80,7 @@ body {
 
 .hour-dot {
   position: absolute;
-  top: 2px;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   width: 6px;
@@ -84,16 +93,17 @@ body {
 }
 .hour-slot.selected .hour-dot { opacity: 1; }
 
-.hour-icon { width: 20px; height: 20px; color: #8A8A8E; }
-.hour-temp { font-size: 1.15rem; font-weight: 300; z-index: 1; }
-.hour-spacer { flex: 1; }
+.hour-icon { width: 18px; height: 18px; color: #8A8A8E; }
+.hour-temp { font-size: 1.05rem; font-weight: 300; z-index: 1; line-height: 1; }
+.hour-spacer { flex: 1; min-height: 4px; }
 .hour-label {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: #8A8A8E;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 6px;
   transition: all 0.2s;
   z-index: 1;
+  line-height: 1;
 }
 .hour-slot.selected .hour-label {
   background: rgba(255,255,255,0.1);

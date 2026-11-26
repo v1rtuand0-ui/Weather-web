@@ -28,7 +28,7 @@ const UI = {
     const info = getWeatherInfo(display.weatherCode, display.isDay);
     this.els.conditionText.textContent = info.label;
 
-    // Wind
+    // Wind (dari jam yang dipilih kalau bukan "now")
     let wind = display.windSpeed;
     if (typeof wind === 'number' && units === 'fahrenheit') wind = Utils.kmhToMph(wind);
     this.els.windValue.textContent = Utils.safeFixed(wind, 1);
@@ -49,7 +49,7 @@ const UI = {
     }
   },
 
-  renderDaily(daily, activeIndex, units = 'celsius') {
+  renderDaily(daily, activeIndex, units = 'celsius', todayCurrent = null) {
     this.els.dailyList.innerHTML = '';
     const limit = Math.min(CONFIG.DAILY_ROWS, daily.length);
     for (let i = 0; i < limit; i++) {
@@ -57,19 +57,29 @@ const UI = {
       let temp = d.tempMax;
       if (typeof temp === 'number' && units === 'fahrenheit') temp = Utils.cToF(temp);
 
-      const info = getWeatherInfo(d.weatherCode, true);
+      // Baris "Today" pakai kondisi sekarang biar konsisten dengan tampilan utama
+      let code = d.weatherCode;
+      let isDay = true;
+      let dayLabel = Utils.formatDayName(d.date);
+      if (i === 0 && todayCurrent) {
+        code = todayCurrent.weatherCode;
+        isDay = todayCurrent.isDay;
+        dayLabel = 'Today';
+      }
+
+      const info = getWeatherInfo(code, isDay);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = `daily-row ${i === activeIndex ? 'active' : ''}`;
       btn.dataset.index = i;
-      btn.setAttribute('aria-label', `${Utils.formatDayName(d.date)}, ${info.label}, ${Utils.safeRound(temp)} degrees`);
+      btn.setAttribute('aria-label', `${dayLabel}, ${info.label}, ${Utils.safeRound(temp)} degrees`);
       btn.innerHTML = `
-        <div class="w-6 h-6 text-muted shrink-0">${SMALL_ICONS[info.icon] || SMALL_ICONS.cloudy}</div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium">${Utils.formatDayName(d.date)}</p>
-          <p class="text-xs text-muted truncate">${info.label}</p>
+        <div class="w-5 h-5 text-muted shrink-0">${SMALL_ICONS[info.icon] || SMALL_ICONS.cloudy}</div>
+        <div class="flex-1 min-w-0 leading-tight">
+          <p class="text-sm font-medium">${dayLabel}</p>
+          <p class="text-[11px] text-muted truncate">${info.label}</p>
         </div>
-        <span class="text-lg font-light shrink-0">${Utils.safeRound(temp)}°</span>
+        <span class="text-base font-light shrink-0">${Utils.safeRound(temp)}°</span>
       `;
       this.els.dailyList.appendChild(btn);
     }
@@ -121,7 +131,7 @@ const UI = {
 
     this.els.dailyList.innerHTML = Array.from({ length: 6 }).map(() => `
       <div class="daily-row">
-        <div class="w-6 h-6 skeleton rounded"></div>
+        <div class="w-5 h-5 skeleton rounded"></div>
         <div class="flex-1 space-y-1">
           <div class="h-3 w-16 skeleton"></div>
           <div class="h-2 w-20 skeleton"></div>
