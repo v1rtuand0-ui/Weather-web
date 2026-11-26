@@ -6,9 +6,17 @@ const API = {
       if (signal.aborted) controller.abort();
       else signal.addEventListener('abort', onUserAbort, { once: true });
     }
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     try {
       return await fetch(url, { signal: controller.signal });
+    } catch (e) {
+      if (timedOut) {
+        const t = new Error('Request timed out');
+        t.name = 'TimeoutError';
+        throw t;
+      }
+      throw e;
     } finally {
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onUserAbort);

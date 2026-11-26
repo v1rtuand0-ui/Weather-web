@@ -20,8 +20,9 @@ const HourlyChart = {
     const range = (maxT - minT) || 1;
 
     // Tanpa ikon per jam: kurva di area atas, sejajar angka suhu
-    const yTop = height * 0.24;
-    const yBottom = height * 0.46;
+    const yTop = 32;                                              // di bawah angka suhu
+    const amp = Math.min(24, Math.max(8, height - 32 - 40));     // amplitudo kecil
+    const yBottom = yTop + amp;
     const n = slots.length;
     const stepX = width / n;
 

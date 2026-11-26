@@ -112,9 +112,8 @@ async function loadWeather(city, { silent = false } = {}) {
   state.loading = true;
 
   const wasOnNow = silent && state.weather && state.selectedHourAbsIdx === state.currentHourIdx;
-  const prevSelected = state.selectedHourAbsIdx;
-  const prevHourStart = state.hourStartIndex;
-  const prevDay = state.activeDayIndex;
+  const prevSelectedTime = state.weather?.hourly[state.selectedHourAbsIdx]?.time || null;
+  const prevStartTime = state.weather?.hourly[state.hourStartIndex]?.time || null;
 
   if (!silent) {
     UI.showLoading();
@@ -134,14 +133,23 @@ async function loadWeather(city, { silent = false } = {}) {
     state.currentHourIdx = findCurrentHourIndex(data);
 
     if (silent) {
-      state.activeDayIndex = Math.min(prevDay, data.daily.length - 1);
       if (wasOnNow) {
         state.selectedHourAbsIdx = state.currentHourIdx;
         state.hourStartIndex = Math.max(0, Math.min(state.currentHourIdx - 1, maxHourStart()));
       } else {
-        state.selectedHourAbsIdx = Math.min(prevSelected, data.hourly.length - 1);
-        state.hourStartIndex = Math.max(0, Math.min(prevHourStart, maxHourStart()));
+        const selIdx = prevSelectedTime ? data.hourly.findIndex(h => h.time === prevSelectedTime) : -1;
+        if (selIdx >= 0) {
+          const startIdx = prevStartTime ? data.hourly.findIndex(h => h.time === prevStartTime) : -1;
+          state.selectedHourAbsIdx = selIdx;
+          state.hourStartIndex = Math.max(0, Math.min(startIdx >= 0 ? startIdx : selIdx - 1, maxHourStart()));
+        } else {
+          state.selectedHourAbsIdx = state.currentHourIdx;
+          state.hourStartIndex = defaultHourStartForDay(0);
+        }
       }
+      const d = data.hourly[state.selectedHourAbsIdx]?.time.slice(0, 10);
+      const di = data.daily.findIndex(x => x.date === d);
+      state.activeDayIndex = di >= 0 ? di : 0;
     } else {
       state.activeDayIndex = 0;
       state.selectedHourAbsIdx = state.currentHourIdx;
@@ -154,7 +162,6 @@ async function loadWeather(city, { silent = false } = {}) {
     renderAll();
   } catch (err) {
     if (token !== state.weatherToken) return;
-    if (err.name === 'AbortError') return;
     console.error('[weather]', err);
     if (silent) {
       UI.showError('Refresh failed. Showing previous data.');
@@ -182,7 +189,10 @@ async function tryCacheOrFail(city, err) {
     state.selectedHourAbsIdx = state.currentHourIdx;
     renderAll();
     const mins = Math.round((Date.now() - cached.savedAt) / 60000);
-    UI.showError(`Offline — showing cached data (${mins} min old)`);
+    const age = `${mins} min old`;
+    UI.showError(navigator.onLine
+      ? `Couldn't refresh — showing cached data (${age})`
+      : `Offline — showing cached data (${age})`);
     return;
   }
 
@@ -247,7 +257,7 @@ function onUnitToggle() {
   }
 }
 
-async function doSearch(query, { force = false } = {}) {
+async function doSearch(query) {
   const ul = UI.els.searchResults;
   const trimmed = (query || '').trim();
 
@@ -303,6 +313,10 @@ async function doSearch(query, { force = false } = {}) {
   } catch (err) {
     if (err.name === 'AbortError') return [];
     if (token !== state.searchToken) return [];
+    if (err.name === 'TimeoutError') {
+      ul.innerHTML = '<li class="text-muted text-xs">Search timed out. Try again.</li>';
+      return [];
+    }
     console.error('[search]', err);
     ul.innerHTML = '<li class="text-muted text-xs">Search failed</li>';
     return [];
@@ -353,13 +367,16 @@ function init() {
   const searchInput = UI.els.searchInput;
   searchInput.addEventListener('input', Utils.debounce(e => doSearch(e.target.value), CONFIG.SEARCH_DEBOUNCE_MS));
   searchInput.addEventListener('keydown', async (e) => {
+    const pickResult = () =>
+      UI.els.searchResults.querySelector('li[aria-selected="true"]') ||
+      UI.els.searchResults.querySelector('li[data-idx="0"]');
     if (e.key === 'Enter') {
-      const first = UI.els.searchResults.querySelector('li[data-idx="0"]');
+      const first = pickResult();
       if (first) {
         first.click();
       } else if (searchInput.value.trim().length >= CONFIG.SEARCH_MIN_CHARS) {
-        await doSearch(searchInput.value, { force: true });
-        const f = UI.els.searchResults.querySelector('li[data-idx="0"]');
+        await doSearch(searchInput.value);
+        const f = pickResult();
         if (f) f.click();
       }
     } else if (e.key === 'Escape') {
@@ -378,14 +395,10 @@ function init() {
   UI.els.hourPrev.addEventListener('click', onHourPrev);
   UI.els.hourNext.addEventListener('click', onHourNext);
   UI.els.unitToggle.addEventListener('click', onUnitToggle);
-  document.getElementById('error-retry').addEventListener('click', () => loadWeather(state.city || lastCity));
-  document.getElementById('error-dismiss').addEventListener('click', UI.hideError.bind(UI));
+  UI.els.errorRetry.addEventListener('click', () => loadWeather(state.city || lastCity));
+  UI.els.errorDismiss.addEventListener('click', UI.hideError.bind(UI));
 
   document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-action="retry"]')) {
-      loadWeather(state.city || Utils.storageGet(CONFIG.STORAGE_KEYS.CITY, CONFIG.DEFAULT_CITY));
-      return;
-    }
     const panel = UI.els.searchPanel;
     const btn = UI.els.cityButton;
     if (!panel.classList.contains('hidden') && !panel.contains(e.target) && !btn.contains(e.target)) {
@@ -403,7 +416,6 @@ function init() {
     }, 150));
   }
 
-  // Auto-refresh (silent) 15 menit + saat tab aktif kembali
   setInterval(() => {
     if (state.city && !state.loading && document.visibilityState === 'visible') {
       loadWeather(state.city, { silent: true });

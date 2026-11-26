@@ -5,7 +5,8 @@ const UI = {
     const ids = ['city-name','city-button','date-text','temp-value','temp-unit','condition-text','time-label',
       'wind-value','wind-unit','humidity-value','weather-icon','weather-glow',
       'daily-list','hourly-track','hourly-curve','hourly-items','hour-prev','hour-next',
-      'error-toast','error-message','search-panel','search-input','search-results','unit-toggle'];
+      'error-toast','error-message','error-retry','error-dismiss',
+      'search-panel','search-input','search-results','unit-toggle'];
     ids.forEach(id => {
       this.els[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
     });
